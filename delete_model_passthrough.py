@@ -16,12 +16,12 @@ class DeleteModelPassthrough:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "data": ("*",),        # any type (IMAGE, LATENT, CLIP, etc.)
-                "model": ("MODEL",),   # model to delete
-            }
+                "data": (any,),
+                "model": (any,),
+            },
         }
-
-    RETURN_TYPES = ("*",)
+ 
+    RETURN_TYPES = (any,)
     RETURN_NAMES = ("output",)
     FUNCTION = "run"
     CATEGORY = "Memory Management"
