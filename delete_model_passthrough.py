@@ -44,6 +44,7 @@ class DeleteModelPassthrough:
         if not torch.cuda.is_available():
             return "CUDA not available."
         initial = torch.cuda.memory_allocated()
+        print(f"Initial GPU memory: {initial}")
         
         try:
             del model
@@ -54,6 +55,7 @@ class DeleteModelPassthrough:
             print(f"Failed to delete model: {e}")
 
         final = torch.cuda.memory_allocated()
+        print(f"Final GPU memory: {final}")
         freed = max(0, initial - final)
         print(f"GPU VRAM freed: {freed/1e9:.2f} GB")
 
