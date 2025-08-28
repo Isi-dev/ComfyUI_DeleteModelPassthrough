@@ -28,8 +28,8 @@ class DeleteModelPassthrough:
             },
         }
  
-    RETURN_TYPES = (any_typ,)
-    RETURN_NAMES = ("output",)
+    RETURN_TYPES = (any_typ, "STRING",)
+    RETURN_NAMES = ("output", "logs",)
     FUNCTION = "run"
     CATEGORY = "Memory Management"
 
