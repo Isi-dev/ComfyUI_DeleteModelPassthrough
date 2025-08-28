@@ -33,35 +33,29 @@ class DeleteModelPassthrough:
     FUNCTION = "run"
     CATEGORY = "Memory Management"
 
-    def _free_gpu_vram(self):
-        if not torch.cuda.is_available():
-            return "CUDA not available."
+    def run(self, data, model):
 
-        initial = torch.cuda.memory_allocated()
-        torch.cuda.empty_cache()
-        final = torch.cuda.memory_allocated()
-        freed = max(0, initial - final)
-        return f"GPU VRAM freed: {freed/1e9:.2f} GB"
-
-    def _free_system_ram(self):
         before = psutil.virtual_memory().percent
         collected = gc.collect()
         after = psutil.virtual_memory().percent
-        freed = before - after
-        return f"System RAM freed: {freed:.2f}%, GC collected {collected} objects."
+        freedr = before - after
+        print(f"System RAM freed: {freedr:.2f}%, GC collected {collected} objects.")
 
-    def run(self, data, model):
-
+        if not torch.cuda.is_available():
+            return "CUDA not available."
+        initial = torch.cuda.memory_allocated()
+        
         try:
             del model
             torch.cuda.empty_cache()
             gc.collect()
-            print("Deleted MODEL completely from VRAM and RAM.")
+            print("Deleted MODEL completely from VRAM.")
         except Exception as e:
             print(f"Failed to delete model: {e}")
 
-        print(self._free_gpu_vram())
-        print(self._free_system_ram())
+        final = torch.cuda.memory_allocated()
+        freed = max(0, initial - final)
+        print(f"GPU VRAM freed: {freed/1e9:.2f} GB")
 
         return (data,)
 
