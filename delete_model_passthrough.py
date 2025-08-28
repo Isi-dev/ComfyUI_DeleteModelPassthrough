@@ -1,5 +1,6 @@
 import torch, gc, psutil
 import comfy.model_management as mm
+from comfy.model_management import current_loaded_models, LoadedModel
 
 class AnyType(str):
     def __ne__(self, __value: object) -> bool: return False
@@ -7,23 +8,34 @@ any_typ = AnyType("*")
 
 
 def hard_free(model):
+    """
+    Forcefully free model memory by detaching parameters and clearing caches.
+    """
     try:
-        # Explicitly nuke parameters and buffers
+        # Clear parameters and buffers
         if hasattr(model, "parameters"):
             for p in model.parameters():
                 if p is not None:
                     p.detach_()
+                    if hasattr(p, 'data'):
+                        del p.data
                     del p
+        
         if hasattr(model, "buffers"):
             for b in model.buffers():
                 if b is not None:
+                    b.detach_()
+                    if hasattr(b, 'data'):
+                        del b.data
                     del b
-        # Clear state_dict if exists
-        if hasattr(model, "state_dict"):
-            sd = model.state_dict()
-            for k in list(sd.keys()):
-                del sd[k]
-            del sd
+        
+        # Clear any cached attributes
+        for attr_name in list(vars(model).keys()):
+            attr = getattr(model, attr_name)
+            if isinstance(attr, torch.Tensor):
+                attr.detach_()
+                delattr(model, attr_name)
+                
     except Exception as e:
         print(f"Hard free error: {e}")
 
@@ -33,44 +45,49 @@ def hard_free(model):
         pass
 
     gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
+    mm.soft_empty_cache()
 
 
-def purge_specific_from_comfy(model):
+def purge_specific_from_comfy(model_obj):
     """
-    Surgically remove THIS model object from ComfyUI's caches
-    without touching unrelated ones. Returns a type string.
+    Remove a specific model from ComfyUI's current_loaded_models list.
+    Returns the model type if found and removed.
     """
     deleted_type = "Unknown"
-
+    
     try:
-        if mm.current_model == model:
-            mm.current_model = None
-            deleted_type = "Diffusion/UNet"
-
-        if hasattr(mm, "loaded_models"):
-            for k, v in list(mm.loaded_models.items()):
-                if v is model:
-                    del mm.loaded_models[k]
-                    deleted_type = "Diffusion/UNet"
-
-        if hasattr(mm, "loaded_clip"):
-            for k, v in list(mm.loaded_clip.items()):
-                if v is model:
-                    del mm.loaded_clip[k]
-                    deleted_type = "CLIP"
-
-        if hasattr(mm, "loaded_vae"):
-            for k, v in list(mm.loaded_vae.items()):
-                if v is model:
-                    del mm.loaded_vae[k]
-                    deleted_type = "VAE"
-
+        # Check if it's a LoadedModel wrapper
+        if isinstance(model_obj, LoadedModel):
+            if model_obj in current_loaded_models:
+                current_loaded_models.remove(model_obj)
+                # Also detach the underlying model
+                if hasattr(model_obj, 'model_unload'):
+                    model_obj.model_unload()
+                deleted_type = f"LoadedModel ({type(model_obj.model).__name__})"
+        
+        # Check if it's a raw model that might be wrapped in LoadedModel
+        else:
+            for i, loaded_model in enumerate(current_loaded_models):
+                if loaded_model.model is model_obj:
+                    current_loaded_models.pop(i)
+                    if hasattr(loaded_model, 'model_unload'):
+                        loaded_model.model_unload()
+                    deleted_type = f"RawModel ({type(model_obj).__name__})"
+                    break
+        
+        # Additional cleanup for common model types
+        if hasattr(model_obj, '__class__'):
+            cls_name = model_obj.__class__.__name__.lower()
+            if 'unet' in cls_name:
+                deleted_type = "UNet"
+            elif 'clip' in cls_name:
+                deleted_type = "CLIP"
+            elif 'vae' in cls_name:
+                deleted_type = "VAE"
+                
     except Exception as e:
         print(f"Cache purge error: {e}")
-
+    
     return deleted_type
 
 
@@ -93,24 +110,37 @@ class DeleteModelPassthrough:
     CATEGORY = "Memory Management"
 
     def run(self, data, model):
+        if model is None:
+            print("⚠️ No model provided to delete")
+            return (data,)
+            
+        # Get memory stats before deletion
         before_vram = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
-        before_res  = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
-        before_ram  = psutil.virtual_memory().percent
+        before_reserved = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
+        before_ram = psutil.virtual_memory().percent
 
+        # Remove from ComfyUI management and free memory
         deleted_type = purge_specific_from_comfy(model)
         hard_free(model)
 
+        # Get memory stats after deletion
         after_vram = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
-        after_res  = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
-        after_ram  = psutil.virtual_memory().percent
+        after_reserved = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
+        after_ram = psutil.virtual_memory().percent
 
+        # Log results
         print(f"🗑️ Deleted model type: {deleted_type}")
         print(f"System RAM change: {before_ram - after_ram:.2f}%")
-        print(f"GPU allocated freed: {(before_vram - after_vram)/1e9:.2f} GB")
-        print(f"GPU reserved freed: {(before_res - after_res)/1e9:.2f} GB")
+        
+        if torch.cuda.is_available():
+            vram_freed = (before_vram - after_vram) / (1024 * 1024 * 1024)
+            reserved_freed = (before_reserved - after_reserved) / (1024 * 1024 * 1024)
+            print(f"GPU allocated freed: {vram_freed:.3f} GB")
+            print(f"GPU reserved freed: {reserved_freed:.3f} GB")
 
         return (data,)
 
 
+# Node mappings
 NODE_CLASS_MAPPINGS = {"DeleteModelPassthrough": DeleteModelPassthrough}
 NODE_DISPLAY_NAME_MAPPINGS = {"DeleteModelPassthrough": "Delete Model (Passthrough Any)"}
