@@ -28,8 +28,8 @@ class DeleteModelPassthrough:
             },
         }
  
-    RETURN_TYPES = (any_typ, "STRING",)
-    RETURN_NAMES = ("output", "logs",)
+    RETURN_TYPES = (any_typ,)
+    RETURN_NAMES = ("output",)
     FUNCTION = "run"
     CATEGORY = "Memory Management"
 
@@ -51,18 +51,17 @@ class DeleteModelPassthrough:
         return f"System RAM freed: {freed:.2f}%, GC collected {collected} objects."
 
     def run(self, data, model):
-        logs = []
 
         try:
             del model
             torch.cuda.empty_cache()
             gc.collect()
-            logs.append("Deleted MODEL completely from VRAM and RAM.")
+            print("Deleted MODEL completely from VRAM and RAM.")
         except Exception as e:
-            logs.append(f"Failed to delete model: {e}")
+            print(f"Failed to delete model: {e}")
 
-        logs.append(self._free_gpu_vram())
-        logs.append(self._free_system_ram())
+        print(self._free_gpu_vram())
+        print(self._free_system_ram())
 
         return (data,)
 
