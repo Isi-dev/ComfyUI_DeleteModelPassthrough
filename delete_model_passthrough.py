@@ -4,6 +4,13 @@ import psutil
 import os
 import ctypes
 
+class AnyType(str):
+    def __ne__(self, __value: object) -> bool:
+        return False
+
+any_typ = AnyType("*")
+
+
 class DeleteModelPassthrough:
     """
     ComfyUI Custom Node that:
@@ -16,12 +23,12 @@ class DeleteModelPassthrough:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "data": (any,),
-                "model": (any,),
+                "data": (any_typ,),
+                "model": (any_typ,),
             },
         }
  
-    RETURN_TYPES = (any,)
+    RETURN_TYPES = (any_typ,)
     RETURN_NAMES = ("output",)
     FUNCTION = "run"
     CATEGORY = "Memory Management"
