@@ -8,7 +8,6 @@ any_typ = AnyType("*")
 
 
 def hard_free_model(model):
-        
     if model is None:
         return
         
@@ -18,17 +17,14 @@ def hard_free_model(model):
         
         # Handle dictionary-style models (common in some workflows)
         if isinstance(model, dict):
-            # print("📦 Handling dictionary-style model container...")
             for key, value in list(model.items()):
                 if hasattr(value, 'parameters') or hasattr(value, 'model'):
-                    # print(f"   Freeing {key}: {type(value).__name__}")
                     hard_free_model(value)
                 del model[key]
             return
         
-        # Handle ModelPatcher objects
+        # Handle ModelPatcher objects (common in ComfyUI)
         if hasattr(model, 'model') and model.model is not None:
-            # print("   Detaching inner model from ModelPatcher...")
             inner_model = model.model
             if hasattr(inner_model, "parameters"):
                 for p in inner_model.parameters():
@@ -37,6 +33,19 @@ def hard_free_model(model):
                         del p
             model.model = None
         
+        # CLIP-specific cleanup - some CLIP models have additional attributes
+        if hasattr(model, "transformer") and model.transformer is not None:
+            if hasattr(model.transformer, "parameters"):
+                for p in model.transformer.parameters():
+                    if p is not None:
+                        p.detach_()
+                        del p
+            model.transformer = None
+            
+        # Handle tokenizer if present (some CLIP implementations)
+        if hasattr(model, "tokenizer"):
+            model.tokenizer = None
+            
         # Standard parameter cleanup
         if hasattr(model, "parameters"):
             for p in model.parameters():
@@ -51,6 +60,7 @@ def hard_free_model(model):
                     b.detach_()
                     del b
         
+        # Clear any tensor attributes
         for attr_name in list(vars(model).keys()):
             attr = getattr(model, attr_name)
             if isinstance(attr, torch.Tensor):
@@ -59,7 +69,6 @@ def hard_free_model(model):
                 
     except Exception as e:
         print(f"❌ Error during model freeing: {e}")
-
 
 def identify_model_type(model_obj):
     """Identify what type of model this is"""
