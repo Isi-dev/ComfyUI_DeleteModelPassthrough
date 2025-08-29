@@ -119,8 +119,12 @@ def print_currently_loaded():
     for i, model in enumerate(current_models):
         try:
             model_type = identify_model_type(model)
-            memory_used = model.model_memory() / (1024 * 1024) if hasattr(model, 'model_memory') else "unknown"
-            print(f"   {i}: {model_type} ({memory_used:.1f} MB)")
+            # Remove the problematic formatting entirely
+            if hasattr(model, 'model_memory'):
+                memory_used = model.model_memory()
+                print(f"   {i}: {model_type} ({memory_used})")
+            else:
+                print(f"   {i}: {model_type} (unknown memory)")
         except Exception as e:
             print(f"   {i}: [Error: {e}]")
     
