@@ -2,6 +2,14 @@ import torch, gc, psutil
 import comfy.model_management as mm
 from comfy.model_management import loaded_models, free_memory, get_torch_device
 
+try:
+    from custom_nodes.ComfyUI_GGUF.nodes import UnetLoaderGGUF
+    GGUF_AVAILABLE = True
+except ImportError:
+    print("⚠️ ComfyUI_GGUF not available - ControlledUnetLoaderGGUF will not work")
+    GGUF_AVAILABLE = False
+    UnetLoaderGGUF = None
+
 class AnyType(str):
     def __ne__(self, __value: object) -> bool: return False
 any_typ = AnyType("*")
@@ -13,7 +21,7 @@ def hard_free_model(model):
         
     try:
         model_type = type(model).__name__
-        print(f"🔧 Freeing {model_type} model...")
+        print(f"Freeing {model_type} model...")
         
         # Handle dictionary-style models (common in some workflows)
         if isinstance(model, dict):
@@ -146,7 +154,7 @@ class DeleteModelPassthrough:
 
         
         model_type = identify_model_type(model)
-        # print(f"🔍 Target model type: {model_type}")
+        # print(f"Target model type: {model_type}")
         
         # Print current state
         initial_count = print_currently_loaded()
@@ -156,7 +164,7 @@ class DeleteModelPassthrough:
         current_models = mm.loaded_models()
         
         if model in current_models:
-            # print("🗑️ Removing model from ComfyUI management...")
+            # print("🗑Removing model from ComfyUI management...")
             current_models.remove(model)
             model_removed = True
         else:
@@ -166,7 +174,7 @@ class DeleteModelPassthrough:
                     if (hasattr(managed_model, 'model') and 
                         (managed_model.model is model or 
                          (hasattr(model, 'model') and managed_model.model is model.model))):
-                        # print("🗑️ Removing wrapped model from ComfyUI management...")
+                        # print("🗑Removing wrapped model from ComfyUI management...")
                         current_models.remove(managed_model)
                         model_removed = True
                         break
@@ -174,11 +182,11 @@ class DeleteModelPassthrough:
                     continue
         
         # Free memory using ComfyUI's proper methods
-        # print("💾 Freeing memory using ComfyUI's system...")
+        # print("Freeing memory using ComfyUI's system...")
         mm.free_memory(1e30, mm.get_torch_device(), mm.loaded_models())
         
         # Additional forceful cleanup
-        # print("🧹 Forceful cleanup...")
+        # print("Forceful cleanup...")
         hard_free_model(model)
         
         # ComfyUI's cache cleanup
@@ -198,8 +206,8 @@ class DeleteModelPassthrough:
         # Print final state
         final_count = print_currently_loaded()
         
-        print(f"📊 Managed models: {initial_count} → {final_count}")
-        print(f"💾 System RAM change: {before_ram - after_ram:+.2f}%")
+        print(f"Managed models: {initial_count} → {final_count}")
+        print(f"System RAM change: {before_ram - after_ram:+.2f}%")
         
         if torch.cuda.is_available():
             vram_freed = (before_vram - after_vram) / (1024 * 1024 * 1024)
@@ -223,8 +231,66 @@ class DeleteModelPassthrough:
 
         return (data,)
 
+# class ControlledUnetLoaderGGUF:
+#     @classmethod
+#     def INPUT_TYPES(s):
+#         # Get the original input types and add trigger
+#         original_types = UnetLoaderGGUF.INPUT_TYPES()
+#         original_types["required"]["trigger"] = (any_typ, {"default": None})
+#         return original_types
+
+#     RETURN_TYPES = ("MODEL",)
+#     FUNCTION = "load_unet"
+#     CATEGORY = "Memory Management"
+#     TITLE = "Controlled UNet Loader (GGUF)"
+
+#     def load_unet(self, trigger, *args, **kwargs):
+#         if trigger is None:
+#             print("⏸UNet loading paused - no trigger received")
+#             return (None,)
+        
+#         # Simply call the original class method
+#         return UnetLoaderGGUF.load_unet(self, *args, **kwargs)
+
+class ControlledUnetLoaderGGUF:
+    @classmethod
+    def INPUT_TYPES(s):
+        if not GGUF_AVAILABLE:
+            return {"required": {"trigger": (any_typ, {"default": None})}}
+        
+        # Get the original input types and add trigger
+        original_types = UnetLoaderGGUF.INPUT_TYPES()
+        if "required" in original_types:
+            original_types["required"]["trigger"] = (any_typ, {"default": None})
+        else:
+            original_types["required"] = {"trigger": (any_typ, {"default": None})}
+        return original_types
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "load_unet"
+    CATEGORY = "Memory Management"
+    TITLE = "Controlled UNet Loader (GGUF)"
+
+    def load_unet(self, trigger, *args, **kwargs):
+        if not GGUF_AVAILABLE:
+            print("❌ ComfyUI_GGUF not installed - cannot load UNet")
+            return (None,)
+            
+        if trigger is None:
+            print("⏸UNet loading paused - no trigger received")
+            return (None,)
+        
+        print(f"Loading UNet...")
+        # Simply call the original class method
+        return UnetLoaderGGUF.load_unet(self, *args, **kwargs)
 
 
-# Node mappings
-NODE_CLASS_MAPPINGS = {"DeleteModelPassthrough": DeleteModelPassthrough}
-NODE_DISPLAY_NAME_MAPPINGS = {"DeleteModelPassthrough": "Delete Model (Passthrough Any)"}
+NODE_CLASS_MAPPINGS = {
+    "DeleteModelPassthrough": DeleteModelPassthrough,
+    "ControlledUnetLoaderGGUF": ControlledUnetLoaderGGUF
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "DeleteModelPassthrough": "Delete Model (Passthrough Any)",
+    "ControlledUnetLoaderGGUF": "Controlled UNet Loader (GGUF)"
+}
