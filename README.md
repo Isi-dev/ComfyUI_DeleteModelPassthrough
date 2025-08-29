@@ -1,4 +1,4 @@
-# ComfyUI_DeleteModelPassthrough
+# ComfyUI_DeleteModelPassthrough (WIP)
 A memory management custom node
 
 ## 📌 Overview
