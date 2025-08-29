@@ -372,24 +372,24 @@ class DeleteModelPassthrough:
         after_ram = psutil.virtual_memory().percent
 
         # Log results
-        print("=" * 60)
-        print("📊 Memory Free Results:")
-        print("=" * 60)
-        print(f"🗑️ Deleted model type: {deleted_type}")
-        print(f"💾 System RAM change: {before_ram - after_ram:+.2f}%")
+        # print("=" * 60)
+        # print("📊 Memory Free Results:")
+        # print("=" * 60)
+        # print(f"🗑️ Deleted model type: {deleted_type}")
+        # print(f"💾 System RAM change: {before_ram - after_ram:+.2f}%")
         
         if torch.cuda.is_available():
             vram_freed = (before_vram - after_vram) / (1024 * 1024 * 1024)
             reserved_freed = (before_reserved - after_reserved) / (1024 * 1024 * 1024)
-            print(f"🎮 GPU allocated freed: {vram_freed:.3f} GB")
-            print(f"🎮 GPU reserved freed: {reserved_freed:.3f} GB")
-            print(f"🎮 Final allocated: {after_vram / (1024 * 1024 * 1024):.3f} GB")
-            print(f"🎮 Final reserved: {after_reserved / (1024 * 1024 * 1024):.3f} GB")
+            # print(f"🎮 GPU allocated freed: {vram_freed:.3f} GB")
+            # print(f"🎮 GPU reserved freed: {reserved_freed:.3f} GB")
+            # print(f"🎮 Final allocated: {after_vram / (1024 * 1024 * 1024):.3f} GB")
+            # print(f"🎮 Final reserved: {after_reserved / (1024 * 1024 * 1024):.3f} GB")
         
         print("=" * 60)
         
         # Success determination based on memory freed
-        if torch.cuda.is_available() and reserved_freed > 0.1:  # Freed at least 100MB
+        if torch.cuda.is_available() and reserved_freed > 1:  # Freed at least 1000MB
             print("✅ SUCCESS: Significant memory freed!")
         elif torch.cuda.is_available() and reserved_freed > 0:
             print("⚠️ PARTIAL: Some memory freed, but model may still be referenced")
