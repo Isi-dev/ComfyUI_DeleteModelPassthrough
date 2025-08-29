@@ -1,6 +1,7 @@
 import torch, gc, psutil
 import comfy.model_management as mm
 from comfy.model_management import loaded_models, free_memory, get_torch_device
+from nodes import ControlNetLoader, VAELoader
 
 try:
     from custom_nodes.ComfyUI_GGUF.nodes import UnetLoaderGGUF
@@ -235,26 +236,58 @@ class DeleteModelPassthrough:
 
         return (data,)
 
-# class ControlledUnetLoaderGGUF:
-#     @classmethod
-#     def INPUT_TYPES(s):
-#         # Get the original input types and add trigger
-#         original_types = UnetLoaderGGUF.INPUT_TYPES()
-#         original_types["required"]["trigger"] = (any_typ, {"default": None})
-#         return original_types
 
-#     RETURN_TYPES = ("MODEL",)
-#     FUNCTION = "load_unet"
-#     CATEGORY = "Memory Management"
-#     TITLE = "Controlled UNet Loader (GGUF)"
+class ControlledControlNetLoader:
+    @classmethod
+    def INPUT_TYPES(s):
+        # Get the original input types and add trigger
+        original_types = ControlNetLoader.INPUT_TYPES()
+        if "required" in original_types:
+            original_types["required"]["trigger"] = (any_typ, {"default": None})
+        else:
+            original_types["required"] = {"trigger": (any_typ, {"default": None})}
+        return original_types
 
-#     def load_unet(self, trigger, *args, **kwargs):
-#         if trigger is None:
-#             print("⏸UNet loading paused - no trigger received")
-#             return (None,)
+    RETURN_TYPES = ("CONTROL_NET",)
+    FUNCTION = "load_controlnet"
+    CATEGORY = "Memory Management"
+    TITLE = "Controlled ControlNet Loader"
+
+    def load_controlnet(self, trigger, *args, **kwargs):
+        if trigger is None:
+            print("⏸️  ControlNet loading paused - no trigger received")
+            return (None,)
         
-#         # Simply call the original class method
-#         return UnetLoaderGGUF.load_unet(self, *args, **kwargs)
+        print(f"🚀 Loading ControlNet...")
+        # Simply call the original class method
+        return ControlNetLoader.load_controlnet(self, *args, **kwargs)
+
+
+class ControlledVAELoader:
+    @classmethod
+    def INPUT_TYPES(s):
+        # Get the original input types and add trigger
+        original_types = VAELoader.INPUT_TYPES()
+        if "required" in original_types:
+            original_types["required"]["trigger"] = (any_typ, {"default": None})
+        else:
+            original_types["required"] = {"trigger": (any_typ, {"default": None})}
+        return original_types
+
+    RETURN_TYPES = ("VAE",)
+    FUNCTION = "load_vae"
+    CATEGORY = "Memory Management"
+    TITLE = "Controlled VAE Loader"
+
+    def load_vae(self, trigger, *args, **kwargs):
+        if trigger is None:
+            print("⏸️  VAE loading paused - no trigger received")
+            return (None,)
+        
+        print(f"🚀 Loading VAE...")
+        # Simply call the original class method
+        return VAELoader.load_vae(self, *args, **kwargs)
+
 
 class ControlledUnetLoaderGGUF:
     @classmethod
@@ -291,10 +324,14 @@ class ControlledUnetLoaderGGUF:
 
 NODE_CLASS_MAPPINGS = {
     "DeleteModelPassthrough": DeleteModelPassthrough,
-    "ControlledUnetLoaderGGUF": ControlledUnetLoaderGGUF
+    "ControlledUnetLoaderGGUF": ControlledUnetLoaderGGUF,
+    "ControlledControlNetLoader": ControlledControlNetLoader,
+    "ControlledVAELoader": ControlledVAELoader
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DeleteModelPassthrough": "Delete Model (Passthrough Any)",
-    "ControlledUnetLoaderGGUF": "Controlled UNet Loader (GGUF)"
+    "ControlledUnetLoaderGGUF": "Controlled UNet Loader (GGUF)",
+    "ControlledControlNetLoader": "Controlled ControlNet Loader",
+    "ControlledVAELoader": "Controlled VAE Loader"
 }
