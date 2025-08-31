@@ -193,6 +193,12 @@ class DeleteModelPassthrough:
         # Additional forceful cleanup
         # print("Forceful cleanup...")
         hard_free_model(model)
+
+        try:
+            del model
+        except:
+            pass
+
         
         # ComfyUI's cache cleanup
         mm.soft_empty_cache(force=True)
