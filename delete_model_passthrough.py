@@ -329,45 +329,43 @@ class DeleteModelPassthroughLight:
         if model is None:
             return (data,)
             
-        # Get memory stats BEFORE any expensive operations
+        # Get memory stats BEFORE any operations
         before_vram = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
         before_reserved = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
         
-        # Quick identification without memory overhead
+        # Quick identification
         model_type = quick_identify_model(model)
         
         # Safe model counting
         initial_count = safe_print_loaded_models()
         
-        # Remove from management FIRST (before any expensive operations)
+        # Remove ONLY the target model from management
         model_removed = False
         try:
             current_models = mm.loaded_models()
             if model in current_models:
                 current_models.remove(model)
                 model_removed = True
-        except:
-            pass
+                print(f"Removed target model from tracking")
+        except Exception as e:
+            print(f"Error removing from tracking: {e}")
         
-        # Free memory using ComfyUI's system FIRST
-        try:
-            mm.free_memory(1e30, mm.get_torch_device(), mm.loaded_models())
-        except:
-            pass
+        # ✅ CRITICAL FIX: Only free the specific model, not all models!
+        # Don't use free_memory() with huge values as it will delete other models
         
-        # Now do safe cleanup
+        # Instead, manually free only our target model
         safe_hard_free_model(model)
         
-        # Cleanup in small steps with periodic GC
-        for _ in range(3):  # Multiple passes for thorough cleanup
-            try:
-                mm.soft_empty_cache(force=True)
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                break  # Exit if successful
-            except:
-                continue
+        # Optional: Use free_memory() correctly if we know how much this model used
+        # But better to avoid it entirely for single-model deletion
+        
+        # Gentle cleanup without affecting other models
+        try:
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except:
+            pass
         
         # Get memory stats after deletion
         after_vram = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
@@ -376,11 +374,16 @@ class DeleteModelPassthroughLight:
         # Safe final count
         final_count = safe_print_loaded_models()
         
-        # Minimal logging
+        # Check if other models were affected
+        other_models_affected = initial_count - final_count > 1 if model_removed else initial_count - final_count > 0
+        
         if torch.cuda.is_available():
             vram_freed = (before_vram - after_vram) / (1024 * 1024 * 1024)
             reserved_freed = (before_reserved - after_reserved) / (1024 * 1024 * 1024)
             print(f"Freed: {reserved_freed:.3f}GB | Models: {initial_count}→{final_count}")
+            
+            if other_models_affected:
+                print(f"⚠️ WARNING: {initial_count - final_count} models were affected, not just the target!")
         
         return (data,)
 
