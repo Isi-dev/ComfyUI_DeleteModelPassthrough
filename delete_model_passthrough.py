@@ -2,6 +2,7 @@ import torch, gc, psutil
 import comfy.model_management as mm
 from comfy.model_management import loaded_models, free_memory, get_torch_device
 from nodes import ControlNetLoader, VAELoader
+from comfy_extras.nodes_model_patch import ModelPatchLoader
 
 try:
     from custom_nodes.ComfyUI_GGUF.nodes import UnetLoaderGGUF
@@ -131,7 +132,6 @@ def print_currently_loaded():
     
     return len(current_models)
 
-
 class DeleteModelPassthrough:
     """
     ComfyUI Custom Node: Properly deletes models using ComfyUI's memory management system
@@ -243,6 +243,148 @@ class DeleteModelPassthrough:
         return (data,)
 
 
+def safe_hard_free_model(model):
+    """Memory-safe model freeing without expensive operations"""
+    if model is None:
+        return
+        
+    try:
+        # Minimal identification without memory overhead
+        model_type = model.__class__.__name__
+        
+        # Handle dictionary-style models - but do it safely
+        if isinstance(model, dict):
+            # Clear dictionary without iterating through values
+            model.clear()
+            return
+        
+        # Quick and dirty cleanup - avoid iterating through parameters if possible
+        if hasattr(model, 'model') and model.model is not None:
+            # Just nullify the reference instead of iterating parameters
+            model.model = None
+        
+        # Nullify common heavy attributes without iteration
+        for attr_name in ['transformer', 'tokenizer', 'encoder', 'decoder']:
+            if hasattr(model, attr_name):
+                setattr(model, attr_name, None)
+                
+        # If we must detach, do it in chunks with garbage collection
+        if hasattr(model, "parameters"):
+            param_count = 0
+            for p in model.parameters():
+                if p is not None:
+                    try:
+                        p.detach_()
+                    except:
+                        pass
+                    param_count += 1
+                    # Periodic garbage collection to prevent memory buildup
+                    if param_count % 1000 == 0:
+                        gc.collect()
+        
+        # Clear the object itself
+        try:
+            del model
+        except:
+            pass
+            
+    except Exception as e:
+        # Silent error handling to avoid memory overhead
+        pass
+
+def safe_print_loaded_models():
+    """Memory-safe way to print loaded models"""
+    try:
+        current_models = mm.loaded_models()
+        if not current_models:
+            print("No models currently managed")
+            return 0
+        
+        print(f"Managed models count: {len(current_models)}")
+        # Just show count, avoid accessing model properties
+        return len(current_models)
+        
+    except:
+        return 0
+
+def quick_identify_model(model_obj):
+    """Quick identification without memory overhead"""
+    if model_obj is None:
+        return "Unknown"
+    return model_obj.__class__.__name__
+
+
+
+class DeleteModelPassthroughLight:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"data": (any_typ,), "model": (any_typ,)}}
+ 
+    RETURN_TYPES = (any_typ,)
+    RETURN_NAMES = ("output",)
+    FUNCTION = "run"
+    CATEGORY = "Memory Management"
+
+    def run(self, data, model):
+        if model is None:
+            return (data,)
+            
+        # Get memory stats BEFORE any expensive operations
+        before_vram = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        before_reserved = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
+        
+        # Quick identification without memory overhead
+        model_type = quick_identify_model(model)
+        
+        # Safe model counting
+        initial_count = safe_print_loaded_models()
+        
+        # Remove from management FIRST (before any expensive operations)
+        model_removed = False
+        try:
+            current_models = mm.loaded_models()
+            if model in current_models:
+                current_models.remove(model)
+                model_removed = True
+        except:
+            pass
+        
+        # Free memory using ComfyUI's system FIRST
+        try:
+            mm.free_memory(1e30, mm.get_torch_device(), mm.loaded_models())
+        except:
+            pass
+        
+        # Now do safe cleanup
+        safe_hard_free_model(model)
+        
+        # Cleanup in small steps with periodic GC
+        for _ in range(3):  # Multiple passes for thorough cleanup
+            try:
+                mm.soft_empty_cache(force=True)
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                break  # Exit if successful
+            except:
+                continue
+        
+        # Get memory stats after deletion
+        after_vram = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        after_reserved = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
+        
+        # Safe final count
+        final_count = safe_print_loaded_models()
+        
+        # Minimal logging
+        if torch.cuda.is_available():
+            vram_freed = (before_vram - after_vram) / (1024 * 1024 * 1024)
+            reserved_freed = (before_reserved - after_reserved) / (1024 * 1024 * 1024)
+            print(f"Freed: {reserved_freed:.3f}GB | Models: {initial_count}→{final_count}")
+        
+        return (data,)
+
+
 class ControlledControlNetLoader:
     @classmethod
     def INPUT_TYPES(s):
@@ -328,16 +470,47 @@ class ControlledUnetLoaderGGUF:
         return UnetLoaderGGUF.load_unet(self, *args, **kwargs)
 
 
+class ControlledModelPatchLoader:
+    @classmethod
+    def INPUT_TYPES(s):
+        # Get the original input types and add trigger
+        original_types = ModelPatchLoader.INPUT_TYPES()
+        if "required" in original_types:
+            original_types["required"]["trigger"] = (any_typ, {"default": None})
+        else:
+            original_types["required"] = {"trigger": (any_typ, {"default": None})}
+        return original_types
+
+    RETURN_TYPES = ("MODEL_PATCH",)
+    FUNCTION = "load_model_patch"
+    CATEGORY = "Memory Management"
+    TITLE = "Controlled Model Patch Loader"
+    EXPERIMENTAL = True
+
+    def load_model_patch(self, trigger, *args, **kwargs):
+        if trigger is None:
+            print("⏸️  Model Patch loading paused - no trigger received")
+            return (None,)
+        
+        print(f"🚀 Loading Model Patch...")
+        # Simply call the original class method
+        return ModelPatchLoader.load_model_patch(self, *args, **kwargs)
+
+
 NODE_CLASS_MAPPINGS = {
+    "DeleteModelPassthroughLight": DeleteModelPassthroughLight,
     "DeleteModelPassthrough": DeleteModelPassthrough,
     "ControlledUnetLoaderGGUF": ControlledUnetLoaderGGUF,
     "ControlledControlNetLoader": ControlledControlNetLoader,
-    "ControlledVAELoader": ControlledVAELoader
+    "ControlledVAELoader": ControlledVAELoader,
+    "ControlledModelPatchLoader": ControlledModelPatchLoader
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "DeleteModelPassthroughLight": "Delete Model Light (Passthrough Any)",
     "DeleteModelPassthrough": "Delete Model (Passthrough Any)",
     "ControlledUnetLoaderGGUF": "Controlled UNet Loader (GGUF)",
     "ControlledControlNetLoader": "Controlled ControlNet Loader",
-    "ControlledVAELoader": "Controlled VAE Loader"
+    "ControlledVAELoader": "Controlled VAE Loader",
+    "ControlledModelPatchLoader": "Controlled ModelPatch Loader",
 }
