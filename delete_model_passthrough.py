@@ -349,8 +349,7 @@ class DeleteModelPassthroughLight:
                 print(f"Removed target model from tracking")
         except Exception as e:
             print(f"Error removing from tracking: {e}")
-        
-        # ✅ CRITICAL FIX: Only free the specific model, not all models!
+    
         # Don't use free_memory() with huge values as it will delete other models
         
         # Instead, manually free only our target model
