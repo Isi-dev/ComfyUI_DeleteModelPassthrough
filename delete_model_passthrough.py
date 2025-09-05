@@ -386,6 +386,65 @@ class DeleteModelPassthroughLight:
         
         return (data,)
 
+class SmartClipDeleter:
+    """
+    Automatically detects if CLIP is in RAM or VRAM and handles appropriately
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"data": (any_typ,), "clip_model": ("CLIP",)}}
+ 
+    RETURN_TYPES = (any_typ,)
+    FUNCTION = "delete_smart"
+    CATEGORY = "Memory Management"
+
+    def delete_smart(self, data, clip_model):
+        if clip_model is None:
+            return (data,)
+            
+        # Detect where the model is loaded
+        model_in_vram = False
+        model_in_ram = False
+        
+        # Check if model has parameters on GPU
+        if hasattr(clip_model, "parameters"):
+            for p in clip_model.parameters():
+                if p is not None and p.device.type != 'cpu':
+                    model_in_vram = True
+                    break
+                elif p is not None:
+                    model_in_ram = True
+        
+        print(f"📍 CLIP model location: {'VRAM' if model_in_vram else 'RAM'}")
+        
+        if model_in_vram:
+            # Use VRAM cleanup approach
+            try:
+                if hasattr(clip_model, 'model_memory'):
+                    model_size = clip_model.model_memory()
+                    mm.free_memory(model_size, mm.get_torch_device())
+                else:
+                    mm.soft_empty_cache()
+            except:
+                pass
+                
+        else:
+            # Use RAM cleanup approach
+            try:
+                # Clear model attributes
+                for attr in ['transformer', 'tokenizer', 'text_model', 'visual', 'model']:
+                    if hasattr(clip_model, attr):
+                        setattr(clip_model, attr, None)
+                
+                # Force garbage collection
+                gc.collect()
+                gc.collect()
+                
+            except:
+                pass
+    
+        return (data,)
 
 class ControlledControlNetLoader:
     @classmethod
@@ -505,7 +564,8 @@ NODE_CLASS_MAPPINGS = {
     "ControlledUnetLoaderGGUF": ControlledUnetLoaderGGUF,
     "ControlledControlNetLoader": ControlledControlNetLoader,
     "ControlledVAELoader": ControlledVAELoader,
-    "ControlledModelPatchLoader": ControlledModelPatchLoader
+    "ControlledModelPatchLoader": ControlledModelPatchLoader,
+    "SmartClipDeleter": SmartClipDeleter
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -515,4 +575,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ControlledControlNetLoader": "Controlled ControlNet Loader",
     "ControlledVAELoader": "Controlled VAE Loader",
     "ControlledModelPatchLoader": "Controlled ModelPatch Loader",
+    "SmartClipDeleter": "Smart CLIP Deleter (Auto-Detect)"
 }
