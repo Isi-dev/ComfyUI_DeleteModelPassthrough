@@ -3,7 +3,7 @@ A memory management custom node
 
 ## 📌 Overview
 This custom node provides a **memory management utility** for [ComfyUI](https://github.com/comfyanonymous/ComfyUI).  
-It allows you to **delete a specific model** (checkpoint, etc.) completely from **VRAM and system RAM** after use, while **passing through any other input type unchanged** (IMAGE, LATENT, CLIP, STRING, INT, CONDITIONING, VAE, etc.).  
+It allows you to **delete a specific model** (checkpoint, etc.) completely from **VRAM and system RAM** after use, while **passing through any other input type unchanged** (IMAGE, LATENT, CLIP, STRING, INT, CONDITIONING, VAE, etc.). It also contains experimental nodes which can be used to modify the order of execution in comfyUI.
 
 This is especially useful for **low VRAM & low RAM environments**, helping to reduce *out-of-memory (OOM) errors* in long workflows.
 
